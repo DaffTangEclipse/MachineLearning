@@ -1,2 +1,4 @@
 # MachineLearning
-MachineLearning
+## 机器学习
+1. CART学习，基于基尼系数的决策树算法
+2. 目前只做了第一层计算基尼值，没有迭代
