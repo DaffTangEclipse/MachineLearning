@@ -182,6 +182,16 @@ def assess(testReu, testJudge):
 def get_length(genera):
     return sum(1 for _ in genera)
 
+# 迭代器里存储着每个样本特征值对应的好/坏
+def get_judge(genera):
+    yield next(genera)
+    # for i in genera:
+    #     print(i)
+    
+    # print("好瓜个数%d" % right)
+    # print("此特征值判断结果")
+        
+
 def pre_prune(dataset, labels, preTree):
     """
     每一层都选择最佳的特征，然后从其各个特征值往下迭代，以字典作为上一层字典的value！
@@ -191,7 +201,8 @@ def pre_prune(dataset, labels, preTree):
     :param labels: 标题，即各个特征
     :return: 决策树，迭代的复合字典
     """
-    preTree = {}
+    preTree = {}    # 记录所有特征值的个数，即使迭代到下一层去了，回溯回这一层仍会保留字典信息
+    preJudge = {}   # 记录各个特征值对应的好瓜/坏瓜结果
     classList = [example[-1] for example in dataset]  # 所有样本好/坏的数据集
     if classList.count(classList[0]) == len(classList):
         # 类别完全相同，停止划分，不需要区分好/坏，因为只要相同，肯定就是class[0]和所有样本都一样啊！
@@ -212,16 +223,21 @@ def pre_prune(dataset, labels, preTree):
     # 得到列表包括节点所有的属性值
     featValues = [example[bestFeat] for example in dataset]
     uniqueVals = set(featValues)
-    reu = []
 
     for value in uniqueVals:
+        # 预剪枝部分
         gene = (line[-1] for line in dataset if line[bestFeat] == value)
         correspond = get_length(gene)
         print("{}的个数有{}".format(value, correspond))
-        subLabels = labels[:]
         preTree[value] = correspond
+        # get_judge(gene)
+        
+        # 迭代生成决策树部分
+        subLabels = labels[:]
         CARTTree[bestFeatLabel][value] = pre_prune(splitdataset(dataset, bestFeat, value), subLabels, preTree)
-    print("本层所有特征值的字典为：{}".format(preTree))
+    
+    print("本层所有特征值的个数为：{}".format(preTree))     # 在这一步其实就找到了一层所有特征值个数
+    print("本层各个特征值对应判断结果为".format(preJudge))  # 
     return CARTTree
 
 
