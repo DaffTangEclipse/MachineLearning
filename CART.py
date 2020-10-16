@@ -1,5 +1,6 @@
 import operator
 import treePlotter
+from math import ceil
 
 
 def read_dataset(filename):
@@ -165,52 +166,66 @@ def classifytest(inputTree, featLabels, testDataSet):
     return classLabelAll
 
 
-def assess(testReu, testJudge):
+def assess(dataset, featureid, judgedict):
     """
     计算此时的正确率
-    :param testReu: 给定测试集的最后一列，list类型
-    :param testJudge: 对测试集判断结果
+    :param dataset: 给定测试集的最后一列，list类型
+    :param featureid: 指定特征的序列
+    :param judgedict: 对测试集判断结果
     :return: 正确率
     """
     correct = 0
-    for i in range(len(testReu)):
-        if testJudge[i] == testReu[i]:
+    for i in dataset:
+        if judgedict[i[featureid]] == i[-1]:
             correct += 1
-    print("正确率为：".format(correct / len(testReu)))
+    accuracy = correct / len(dataset)
+    print("只截止到本层剪枝，决策正确率为{}".format(accuracy))
+    return accuracy
 
-    # 获取迭代器长度，即查找到的特征数量
+
+# 计算迭代器的长度和其中好瓜的个数用于投票选举该特征值对应的好/坏
 def get_length(genera):
-    return sum(1 for _ in genera)
+    num = 0
+    right = 0
+    for i in genera:
+        num += 1
+        if i == "是":
+            right += 1
 
-# 迭代器里存储着每个样本特征值对应的好/坏
-def get_judge(genera):
-    yield next(genera)
-    # for i in genera:
-    #     print(i)
-    
-    # print("好瓜个数%d" % right)
-    # print("此特征值判断结果")
-        
+    return num, right
 
-def pre_prune(dataset, labels, preTree):
+
+# good or bad好坏瓜判断
+def gob(n, good):
+    if good >= ceil(n/2):
+        return "是"
+    else:
+        return "否"
+
+
+def post_prune(dataset, labels, k):
     """
+    后剪枝
     每一层都选择最佳的特征，然后从其各个特征值往下迭代，以字典作为上一层字典的value！
     如果传入的数据集全是相同判断结果(好/坏)，就把最后一列作为此特征值的判断结果
-    每生成一个判定标准后，都进行一次测试集的检测
+    每生成一个判定标准后，都进行一次本集的检测
     :param dataset: 样本数据
     :param labels: 标题，即各个特征
+    :param k: 内层计算得到的正确率,在每一层结束后都会返回k来比较
     :return: 决策树，迭代的复合字典
     """
-    preTree = {}    # 记录所有特征值的个数，即使迭代到下一层去了，回溯回这一层仍会保留字典信息
-    preJudge = {}   # 记录各个特征值对应的好瓜/坏瓜结果
+    # preTree = {}  # 记录所有特征值的个数，即使迭代到下一层去了，回溯回这一层仍会保留字典信息,没有也没事
+    preJudge = {}  # 暂时记录这一层各个特征值对应的好瓜/坏瓜结果
     classList = [example[-1] for example in dataset]  # 所有样本好/坏的数据集
     if classList.count(classList[0]) == len(classList):
         # 类别完全相同，停止划分，不需要区分好/坏，因为只要相同，肯定就是class[0]和所有样本都一样啊！
-        return classList[0]  # 直接返回上级迭代，顺便传个最佳
+        # 直接返回上级迭代，顺便传个判断结果; k是为了避免第一个分支就往下算出了个真值,回溯还得带着
+        k = k if k != 0 else 0
+        return classList[0], k
     if len(dataset[0]) == 1:
         # 遍历完所有特征时返回出现次数最多的
-        return majorityCnt(classList)
-    # 投票选举
+        k = k if k != 0 else 0
+        return majorityCnt(classList), k
 
     bestFeat = CART_chooseBestFeatureToSplit(dataset)
 
@@ -225,42 +240,52 @@ def pre_prune(dataset, labels, preTree):
     uniqueVals = set(featValues)
 
     for value in uniqueVals:
-        # 预剪枝部分
+        # 后剪枝部分
         gene = (line[-1] for line in dataset if line[bestFeat] == value)
-        correspond = get_length(gene)
-        print("{}的个数有{}".format(value, correspond))
-        preTree[value] = correspond
-        # get_judge(gene)
-        
+        v_nums, v_right = get_length(gene)  # value的总数和正确的数目
+        print("{}的个数有{},其中好瓜{}".format(value, v_nums, v_right))
+        # preTree[value] = v_nums   # 只需要知道各个特征值的数目就可以了
+        preJudge[value]= gob(v_nums, v_right)
+
         # 迭代生成决策树部分
         subLabels = labels[:]
-        CARTTree[bestFeatLabel][value] = pre_prune(splitdataset(dataset, bestFeat, value), subLabels, preTree)
-    
-    print("本层所有特征值的个数为：{}".format(preTree))     # 在这一步其实就找到了一层所有特征值个数
-    print("本层各个特征值对应判断结果为".format(preJudge))  # 
-    return CARTTree
+        CARTTree[bestFeatLabel][value], k = post_prune(splitdataset(dataset, bestFeat, value), subLabels, k)
+
+    print("本层判断结果为--->{}".format(preJudge))   # 在这一步其实就找到了一层所有特征值个数大括号！！！！
+    k1 = assess(dataset, bestFeat, preJudge)
+    #  如果这层计算结果变大了,就直接剪掉!而且一定是好瓜!
+    if k1 >= k:
+        return "是", k1
+
+    return CARTTree, k1
 
 
 def main():
     filename = 'watermelon2_train.txt'
     testfile = 'watermelon2_test.txt'
-
     dataset, labels = read_dataset(filename)
+
     # demo
     print(u"首次计算得到的最优特征:" + labels[CART_chooseBestFeatureToSplit(dataset)])
     # print(u"==============首次寻找最优索引结束！===============\n")
-    labels_tmp = labels[:]  # 拷贝，createTree会改变labels，不能直接等于，那还是引用
+    labels_tmp1 = labels[:]  # 拷贝，createTree会改变labels，不能直接等于，那还是引用
+    labels_tmp = labels[:]
+    dataset_tmp = dataset[:]
     # 训练
-    preTree = {}
-    CARTdesicionTree = pre_prune(dataset, labels_tmp, preTree)
-    print('字典格式的决策树:\n', CARTdesicionTree)
-
+    # preTree = {}
+    CARTdesicionTree = CART_createTree(dataset, labels_tmp)
+    print('未剪枝字典格式的决策树:\n', CARTdesicionTree)
+    # 后剪枝
+    pruneTree, k = post_prune(dataset_tmp, labels_tmp1, 0)
+    print('后剪枝字典格式的决策树:\n', pruneTree)
     # 绘图
     # treePlotter.CART_Tree(CARTdesicionTree)
     # 测试
-    testSet, testReu = read_testset(filename)
+    testSet, testReu = read_testset(testfile)
     testJudge = classifytest(CARTdesicionTree, labels, testSet)
-    print('测试集的决策结果:\n', testJudge)
+    print('未剪枝树对测试集的决策结果:\n', testJudge)
+    testJudge1 = classifytest(pruneTree, labels, testSet)
+    print('后剪枝决策树对测试集的决策结果:\n', testJudge1)
 
 
 if __name__ == '__main__':
